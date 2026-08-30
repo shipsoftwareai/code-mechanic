@@ -7,6 +7,7 @@ use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use notify::event::ModifyKind;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 
@@ -208,16 +209,15 @@ fn watch_loop(
                     last_reconcile = Instant::now();
                     continue;
                 }
-                if is_content_event(event.kind) {
-                    let relevant: Vec<PathBuf> = event
-                        .paths
-                        .into_iter()
-                        .filter(|path| relevant_path(path))
-                        .collect();
-                    if !relevant.is_empty() {
-                        last_activity = Instant::now();
-                        pending.extend(relevant);
-                    }
+                if process_content_event(
+                    index,
+                    event,
+                    &mut pending,
+                    &mut last_activity,
+                    &mut paths_refreshed,
+                )? {
+                    event_batches += 1;
+                    last_reconcile = Instant::now();
                 }
             }
             Ok(Err(error)) => {
@@ -294,6 +294,46 @@ fn flush_pending(
 
 fn is_content_event(kind: EventKind) -> bool {
     !matches!(kind, EventKind::Access(_))
+}
+
+fn process_content_event(
+    index: &CodeIndex,
+    event: Event,
+    pending: &mut BTreeSet<PathBuf>,
+    last_activity: &mut Instant,
+    paths_refreshed: &mut usize,
+) -> Result<bool> {
+    let reconcile_tree = event_requires_tree_reconcile(event.kind);
+    if !is_content_event(event.kind) {
+        return Ok(false);
+    }
+    let relevant: Vec<PathBuf> = event
+        .paths
+        .into_iter()
+        .filter(|path| relevant_path(path))
+        .collect();
+    if relevant.is_empty() {
+        return Ok(false);
+    }
+    *last_activity = Instant::now();
+    pending.extend(relevant);
+    if !reconcile_tree {
+        return Ok(false);
+    }
+
+    // Windows can report rename/removal paths in a form that cannot be made
+    // relative lexically. Refresh event paths first, then reconcile the file
+    // set so a vanished indexed row cannot survive until a periodic sweep.
+    flush_pending(index, pending, paths_refreshed)?;
+    index.reconcile(false)?;
+    Ok(true)
+}
+
+fn event_requires_tree_reconcile(kind: EventKind) -> bool {
+    matches!(
+        kind,
+        EventKind::Remove(_) | EventKind::Modify(ModifyKind::Name(_))
+    )
 }
 
 fn relevant_path(path: &Path) -> bool {
