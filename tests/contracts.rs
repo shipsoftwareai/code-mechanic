@@ -577,7 +577,10 @@ fn watcher_registry_lists_metadata_tracks_create_rename_delete_and_stops_all() {
     let registry = WatcherRegistry::open_at(&registry_path).unwrap();
     let watched_index = index.clone();
     let config = WatchConfig {
-        duration: Some(Duration::from_secs(10)),
+        // This test performs three sequential filesystem transitions. Keep the
+        // watcher lifetime comfortably above their individual bounded waits,
+        // especially on a cold Windows CI runner.
+        duration: Some(Duration::from_secs(30)),
         idle_exit: None,
         debounce: Duration::from_millis(30),
         reconcile_interval: Duration::from_secs(2),
@@ -589,7 +592,9 @@ fn watcher_registry_lists_metadata_tracks_create_rename_delete_and_stops_all() {
         watcher::run(&watched_index, &config, stop.as_ref())
     });
 
-    wait_until(|| registry.list().is_ok_and(|list| list.active == 1));
+    wait_until("watcher registration", || {
+        registry.list().is_ok_and(|list| list.active == 1)
+    });
     let listed = registry.list().unwrap();
     let watcher = &listed.watchers[0];
     assert_eq!(
@@ -606,7 +611,7 @@ fn watcher_registry_lists_metadata_tracks_create_rename_delete_and_stops_all() {
     assert!(watcher.deadline_unix_ms.is_some());
 
     write(workspace.path(), "src/created.rs", "fn created() {}\n");
-    wait_until(|| {
+    wait_until("created file indexed", || {
         index
             .definitions("created", Some("src/created.rs"))
             .is_ok_and(|items| items.len() == 1)
@@ -616,7 +621,7 @@ fn watcher_registry_lists_metadata_tracks_create_rename_delete_and_stops_all() {
         workspace.path().join("src/moved.rs"),
     )
     .unwrap();
-    wait_until(|| {
+    wait_until("renamed file reindexed", || {
         index
             .definitions("created", Some("src/moved.rs"))
             .is_ok_and(|items| items.len() == 1)
@@ -625,7 +630,7 @@ fn watcher_registry_lists_metadata_tracks_create_rename_delete_and_stops_all() {
                 .is_ok_and(|items| items.is_empty())
     });
     std::fs::remove_file(workspace.path().join("src/moved.rs")).unwrap();
-    wait_until(|| {
+    wait_until("deleted file removed from index", || {
         index
             .definitions("created", None)
             .is_ok_and(|items| items.is_empty())
@@ -666,7 +671,9 @@ fn forced_stop_all_signals_a_separate_watcher_process_and_it_cleans_up() {
         .spawn()
         .unwrap();
 
-    wait_until(|| registry.list().is_ok_and(|list| list.active == 1));
+    wait_until("separate watcher registration", || {
+        registry.list().is_ok_and(|list| list.active == 1)
+    });
     let report = registry.stop_all(true, Duration::ZERO).unwrap();
     assert_eq!(report.requested, 1);
     assert_eq!(report.force_signalled, 1);
@@ -683,7 +690,9 @@ fn forced_stop_all_signals_a_separate_watcher_process_and_it_cleans_up() {
         std::thread::sleep(Duration::from_millis(20));
     };
     assert!(status.success());
-    wait_until(|| registry.list().is_ok_and(|list| list.watchers.is_empty()));
+    wait_until("forced watcher registry cleanup", || {
+        registry.list().is_ok_and(|list| list.watchers.is_empty())
+    });
 }
 
 #[test]
@@ -750,12 +759,12 @@ fn benchmark_refuses_to_claim_large_savings_when_the_exact_body_dominates() {
     assert!(report.cases[0].locator_vs_full_source_reduction_pct >= 80.0);
 }
 
-fn wait_until(mut condition: impl FnMut() -> bool) {
+fn wait_until(label: &str, mut condition: impl FnMut() -> bool) {
     let started = std::time::Instant::now();
     while !condition() {
         assert!(
-            started.elapsed() < Duration::from_secs(5),
-            "condition did not become true before timeout"
+            started.elapsed() < Duration::from_secs(10),
+            "{label} did not become true before timeout"
         );
         std::thread::sleep(Duration::from_millis(20));
     }
