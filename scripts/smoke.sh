@@ -7,6 +7,8 @@ export LANG=C
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 OUT=${CODE_MECHANIC_SMOKE_OUT:-"$ROOT/target/code-mechanic-smoke"}
 
+python3 "$ROOT/scripts/tests/test_harness_registry.py"
+
 case "$OUT" in
     "$ROOT"/target/*) ;;
     *) echo "smoke output must remain below target/" >&2; exit 64 ;;

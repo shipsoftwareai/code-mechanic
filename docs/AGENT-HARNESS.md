@@ -9,8 +9,10 @@ Add this to `AGENTS.md` or the equivalent agent entrypoint:
 
 ```md
 Use `code-mechanic` for supported static-language structure. Run
-`code-mechanic --root . index --reconcile` before queries. Prefer `locate` and
-bounded `search-body` before requesting complete source with `symbol --raw`.
+`code-mechanic --root . index --reconcile --force-hash` immediately before each
+query or refactor preview. Prefer `locate` and bounded `search-body` before
+requesting complete source with `symbol --raw`. Treat watchers only as latency
+optimizations; they are not freshness authority.
 All refactors preview by default; apply only with the exact fresh plan ID.
 Inspect watchers with `code-mechanic watchers list` and prefer cooperative
 `watchers stop-all`.
@@ -27,7 +29,7 @@ Also ignore the derived cache:
 ```sh
 command -v code-mechanic
 code-mechanic capabilities
-code-mechanic --root . index --reconcile
+code-mechanic --root . index --reconcile --force-hash
 code-mechanic --root . status
 code-mechanic --root . diagnostics
 ```
@@ -55,9 +57,13 @@ code-mechanic --root . search-body dispatch --file src/runtime.rs \
 line independently. It reports both `matching_lines` and `returned_lines`, plus
 `truncated`, so an agent knows whether it received a sample.
 
+Run a forced whole-root reconcile immediately before step 1. Exact target
+queries validate live content hashes, while the root reconcile also discovers
+new files and removes renamed or deleted ones.
+
 ## Refactor Recipe
 
-1. Reconcile.
+1. Reconcile the whole root with `--reconcile --force-hash`.
 2. Request a preview without `--apply`.
 3. Inspect `files_changed`, `replacements` and every occurrence.
 4. Pass the returned `plan_id` to the identical command with `--apply`.

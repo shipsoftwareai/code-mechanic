@@ -7,11 +7,12 @@ Thanks for helping make structural tooling safer and cheaper for coding agents.
 Install the pinned Rust toolchain, then run:
 
 ```sh
-cargo fmt --all -- --check
-cargo test --all-targets --locked
-cargo clippy --all-targets --locked -- -D warnings
-scripts/smoke.sh
+scripts/agent-cube/verify.sh
 ```
+
+See `AGENTS.md` and `.agent-cube/harness.json` for focused iteration actions.
+The verify action runs formatting, unit/contracts, Clippy, the harness registry
+guard and the end-to-end agent smoke.
 
 Tests should stay silent, deterministic and independent of network services.
 Every write-capable feature needs preview/apply coverage, stale-plan refusal and

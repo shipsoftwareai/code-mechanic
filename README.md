@@ -180,6 +180,13 @@ to stdout; structured errors go to stderr with a non-zero exit status.
 See [Agent harness integration](docs/AGENT-HARNESS.md) for an `AGENTS.md`
 snippet, lifecycle guidance and command recipes.
 
+When developing Code Mechanic itself, start with [AGENTS.md](AGENTS.md) and the
+machine-readable [.agent-cube/harness.json](.agent-cube/harness.json). The
+registered scripts provide focused build, test, lint, refactor, watcher,
+benchmark and end-to-end contract actions; `scripts/agent-cube/verify.sh` is the
+complete pre-commit gate. A registry test keeps every executable harness script
+registered exactly once with a bounded timeout.
+
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)

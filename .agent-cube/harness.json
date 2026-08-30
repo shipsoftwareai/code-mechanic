@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "project": "code-mechanic",
+  "actions": {
+    "verify": {
+      "command": "scripts/agent-cube/verify.sh",
+      "timeoutSeconds": 1200
+    },
+    "build": {
+      "command": "scripts/agent-cube/build.sh",
+      "timeoutSeconds": 600
+    },
+    "test": {
+      "command": "scripts/agent-cube/test.sh",
+      "timeoutSeconds": 900
+    },
+    "lint": {
+      "command": "scripts/agent-cube/lint.sh",
+      "timeoutSeconds": 900
+    },
+    "agent_contract_smoke": {
+      "command": "scripts/agent-cube/agent-contract-smoke.sh",
+      "timeoutSeconds": 1200
+    },
+    "refactor_smoke": {
+      "command": "scripts/agent-cube/refactor-smoke.sh",
+      "timeoutSeconds": 900
+    },
+    "watcher_smoke": {
+      "command": "scripts/agent-cube/watcher-smoke.sh",
+      "timeoutSeconds": 900
+    },
+    "benchmark_smoke": {
+      "command": "scripts/agent-cube/benchmark-smoke.sh",
+      "timeoutSeconds": 900
+    }
+  }
+}
