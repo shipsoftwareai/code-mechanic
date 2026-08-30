@@ -5,6 +5,17 @@ All notable changes to Code Mechanic are documented here. The project follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-30
+
+### Added
+
+- Kotlin `.kt`/`.kts` indexing, locator/body queries, call references and safe
+  parity for rename, braced-body injection/replacement and parameter append.
+- Kotlin easy-to-complex fixtures, refactor/refusal contracts, smoke coverage
+  and token benchmark evidence.
+- A value-ordered roadmap for freshness, file moves, signature migrations and
+  future language support.
+
 ## [0.1.0] - 2026-08-30
 
 ### Added
@@ -22,5 +33,6 @@ All notable changes to Code Mechanic are documented here. The project follows
   results.
 - Homebrew tap, multi-platform CI and release archives.
 
-[Unreleased]: https://github.com/shipsoftwareai/code-mechanic/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/shipsoftwareai/code-mechanic/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/shipsoftwareai/code-mechanic/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/shipsoftwareai/code-mechanic/releases/tag/v0.1.0

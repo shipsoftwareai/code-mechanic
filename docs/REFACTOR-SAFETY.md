@@ -56,6 +56,22 @@ Shader include systems, defines, stage configuration and driver/compiler
 dialects are outside Tree-sitter's concrete source tree. Compile every affected
 shader variant after a change.
 
+### Kotlin
+
+Overload resolution, extension/member dispatch, imports, operators, `expect` /
+`actual`, generated sources and Gradle source sets require Kotlin compiler
+identity. Rename is therefore name based.
+
+Braced functions support entry injection and body replacement. Expression-body
+functions remain available to retrieval, rename and parameter edits, but body
+writes refuse them rather than silently changing `=` semantics.
+
+Parameter append supports parenthesized calls. If a call already uses a named
+argument, the new argument must also be named. Calls with trailing lambdas are
+refused because appending a formal can change which parameter receives the
+lambda even when the edited source still parses. Kotlin scripts (`.kts`) receive
+the same syntax guarantees, not Gradle or host-DSL semantic guarantees.
+
 ## Why File Moves Are Not Shipped Yet
 
 A useful file move must atomically update dependency edges, not merely rename a

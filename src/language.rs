@@ -17,6 +17,7 @@ pub enum Language {
     #[serde(rename = "objective-c")]
     ObjectiveC,
     Glsl,
+    Kotlin,
 }
 
 impl Language {
@@ -29,6 +30,7 @@ impl Language {
             "go" => Some(Self::Go),
             "m" => Some(Self::ObjectiveC),
             "vert" | "frag" | "glsl" | "geom" | "comp" | "tesc" | "tese" => Some(Self::Glsl),
+            "kt" | "kts" => Some(Self::Kotlin),
             _ => None,
         }
     }
@@ -42,6 +44,7 @@ impl Language {
             Self::Go => "go",
             Self::ObjectiveC => "objective-c",
             Self::Glsl => "glsl",
+            Self::Kotlin => "kotlin",
         }
     }
 
@@ -53,6 +56,7 @@ impl Language {
             Self::Go => tree_sitter_go::LANGUAGE.into(),
             Self::ObjectiveC => tree_sitter_objc::LANGUAGE.into(),
             Self::Glsl => tree_sitter_glsl::LANGUAGE_GLSL.into(),
+            Self::Kotlin => tree_sitter_kotlin_ng::LANGUAGE.into(),
         }
     }
 }
@@ -218,6 +222,9 @@ fn function_symbol(node: Node<'_>, source: &[u8], language: Language) -> Option<
                 source,
             ))
         }
+        Language::Kotlin if node.kind() == "function_declaration" => {
+            kotlin_function_symbol(node, source)
+        }
         Language::ObjectiveC if node.kind() == "method_definition" => {
             let name = objc_method_name(node)?;
             let body = named_descendant(node, "compound_statement")?;
@@ -243,6 +250,22 @@ fn function_symbol(node: Node<'_>, source: &[u8], language: Language) -> Option<
         }
         _ => None,
     }
+}
+
+fn kotlin_function_symbol(node: Node<'_>, source: &[u8]) -> Option<FunctionSymbol> {
+    let body = direct_named_child(node, "function_body");
+    Some(make_symbol(
+        node,
+        node.child_by_field_name("name")?,
+        body,
+        direct_named_child(node, "function_value_parameters"),
+        if body.is_some() {
+            SymbolKind::Definition
+        } else {
+            SymbolKind::Prototype
+        },
+        source,
+    ))
 }
 
 fn make_symbol(
@@ -310,6 +333,12 @@ fn named_descendant<'tree>(node: Node<'tree>, kind: &str) -> Option<Node<'tree>>
         .find_map(|child| named_descendant(child, kind))
 }
 
+fn direct_named_child<'tree>(node: Node<'tree>, kind: &str) -> Option<Node<'tree>> {
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .find(|child| child.kind() == kind)
+}
+
 fn objc_method_name(node: Node<'_>) -> Option<Node<'_>> {
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
@@ -336,14 +365,42 @@ fn call_reference(node: Node<'_>, source: &[u8], language: Language) -> Option<C
             if node.kind() == "call_expression" =>
         {
             let name = terminal_callable_name(node.child_by_field_name("function")?)?;
-            (name, node.child_by_field_name("arguments"))
+            (
+                name,
+                node.child_by_field_name("arguments")
+                    .map(|value| (value.start_byte(), value.end_byte())),
+            )
         }
         Language::Rust if node.kind() == "method_call_expression" => (
             node.child_by_field_name("name")?,
-            node.child_by_field_name("arguments"),
+            node.child_by_field_name("arguments")
+                .map(|value| (value.start_byte(), value.end_byte())),
         ),
         Language::ObjectiveC if node.kind() == "message_expression" => {
             (node.child_by_field_name("method")?, None)
+        }
+        Language::Kotlin if node.kind() == "call_expression" => {
+            let callee = node.named_child(0)?;
+            // Kotlin represents `target(1) { ... }` as an outer call whose
+            // callee is the complete inner `target(1)` call. Index only the
+            // inner call so rename/argument edits are not duplicated.
+            if callee.kind() == "call_expression" {
+                return None;
+            }
+            let name = terminal_callable_name(callee)?;
+            let has_trailing_lambda = direct_named_child(node, "annotated_lambda").is_some()
+                || node.parent().is_some_and(|parent| {
+                    parent.kind() == "call_expression"
+                        && direct_named_child(parent, "annotated_lambda").is_some()
+                });
+            // Appending a parameter can change which formal receives a trailing
+            // lambda, so retain the call for rename/refs but deliberately omit
+            // an editable argument span. append-parameter will refuse it.
+            let arguments = (!has_trailing_lambda)
+                .then(|| direct_named_child(node, "value_arguments"))
+                .flatten()
+                .map(|value| (value.start_byte(), value.end_byte()));
+            (name, arguments)
         }
         _ => return None,
     };
@@ -352,8 +409,8 @@ fn call_reference(node: Node<'_>, source: &[u8], language: Language) -> Option<C
         start_byte: name_node.start_byte(),
         end_byte: name_node.end_byte(),
         line: name_node.start_position().row + 1,
-        arguments_start_byte: arguments.map(|value| value.start_byte()),
-        arguments_end_byte: arguments.map(|value| value.end_byte()),
+        arguments_start_byte: arguments.map(|value| value.0),
+        arguments_end_byte: arguments.map(|value| value.1),
     })
 }
 
@@ -542,5 +599,69 @@ void main() { float result = shade(1.0); }
         );
         let calls: Vec<_> = parsed.calls.iter().map(|item| item.name.as_str()).collect();
         assert_eq!(calls, ["sin", "shade"]);
+    }
+
+    #[test]
+    fn kotlin_extracts_expression_braced_generic_extension_and_trailing_lambda_calls() {
+        let source = r#"
+package sample
+
+fun easy(value: Int): Int = value + 1
+fun String.decorate(prefix: String): String { return prefix + this }
+
+class Worker {
+    suspend fun <T> complex(value: T, transform: (T) -> T): T
+        where T : Any {
+        val first = transform(value)
+        return helper(first) + this.finish(first)
+    }
+}
+
+fun helper(value: Any): Any { return value }
+fun caller(worker: Worker) {
+    worker.complex(1) { it }
+    "value".decorate("prefix")
+}
+"#;
+        let parsed = parse(Language::Kotlin, source).unwrap();
+        assert!(!parsed.tree.root_node().has_error());
+        let facts: Vec<_> = parsed
+            .functions
+            .iter()
+            .map(|item| (item.name.as_str(), item.kind))
+            .collect();
+        assert_eq!(
+            facts,
+            [
+                ("easy", SymbolKind::Definition),
+                ("decorate", SymbolKind::Definition),
+                ("complex", SymbolKind::Definition),
+                ("helper", SymbolKind::Definition),
+                ("caller", SymbolKind::Definition),
+            ]
+        );
+        let calls: Vec<_> = parsed.calls.iter().map(|item| item.name.as_str()).collect();
+        assert_eq!(
+            calls,
+            ["transform", "helper", "finish", "complex", "decorate"]
+        );
+        assert!(
+            parsed
+                .functions
+                .iter()
+                .all(|item| item.parameters_start_byte.is_some())
+        );
+        let complex = parsed
+            .calls
+            .iter()
+            .find(|item| item.name == "complex")
+            .unwrap();
+        assert!(complex.arguments_start_byte.is_none());
+        let decorate = parsed
+            .calls
+            .iter()
+            .find(|item| item.name == "decorate")
+            .unwrap();
+        assert!(decorate.arguments_start_byte.is_some());
     }
 }

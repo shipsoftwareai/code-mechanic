@@ -312,7 +312,7 @@ fn process_content_event(
         .into_iter()
         .filter(|path| relevant_path(path))
         .collect();
-    if relevant.is_empty() {
+    if relevant.is_empty() && !reconcile_tree {
         return Ok(false);
     }
     *last_activity = Instant::now();
@@ -321,9 +321,10 @@ fn process_content_event(
         return Ok(false);
     }
 
-    // Windows can report rename/removal paths in a form that cannot be made
-    // relative lexically. Refresh event paths first, then reconcile the file
-    // set so a vanished indexed row cannot survive until a periodic sweep.
+    // Backends can report rename/removal as a parent directory or a path that
+    // cannot be made relative lexically. Refresh supported event paths first,
+    // then reconcile the complete file set even when none were reported so a
+    // vanished indexed row cannot survive until a periodic sweep.
     flush_pending(index, pending, paths_refreshed)?;
     index.reconcile(false)?;
     Ok(true)

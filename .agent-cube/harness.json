@@ -33,6 +33,10 @@
     "benchmark_smoke": {
       "command": "scripts/agent-cube/benchmark-smoke.sh",
       "timeoutSeconds": 900
+    },
+    "kotlin_smoke": {
+      "command": "scripts/agent-cube/kotlin-smoke.sh",
+      "timeoutSeconds": 900
     }
   }
 }

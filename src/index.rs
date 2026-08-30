@@ -159,17 +159,24 @@ impl CodeIndex {
     /// size or mtime changed.
     pub fn reconcile(&self, force_hash: bool) -> Result<IndexSummary> {
         let current_paths = self.source_paths()?;
-        let current_rel: BTreeSet<String> = current_paths
-            .iter()
-            .map(|path| self.relative_string(path))
-            .collect::<Result<_>>()?;
         let stored = self.file_fingerprints()?;
+        let mut current_rel = BTreeSet::new();
         let mut changed = Vec::new();
 
         for path in &current_paths {
-            let relative = self.relative_string(path)?;
-            let metadata = std::fs::metadata(path)
-                .with_context(|| format!("read metadata for {}", path.display()))?;
+            // The walker may yield a path that is renamed before this loop
+            // reaches it. Preserve its safe lexical identity so a later
+            // NotFound can be treated as removal rather than killing a watcher.
+            let relative = self.relative_string_lexical(path)?;
+            let metadata = match std::fs::metadata(path) {
+                Ok(metadata) => metadata,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => {
+                    return Err(error)
+                        .with_context(|| format!("read metadata for {}", path.display()));
+                }
+            };
+            current_rel.insert(relative.clone());
             let bytes =
                 usize::try_from(metadata.len()).context("source file length exceeds usize")?;
             let modified_ns = modified_ns(&metadata);
@@ -181,14 +188,29 @@ impl CodeIndex {
                 continue;
             }
             if force_hash {
-                let bytes_on_disk = std::fs::read(path)
-                    .with_context(|| format!("read source {}", path.display()))?;
+                let bytes_on_disk = match std::fs::read(path) {
+                    Ok(bytes) => bytes,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        current_rel.remove(&relative);
+                        continue;
+                    }
+                    Err(error) => {
+                        return Err(error)
+                            .with_context(|| format!("read source {}", path.display()));
+                    }
+                };
                 let hash = content_hash(&bytes_on_disk);
                 if stored.get(&relative).is_some_and(|old| old.hash == hash) {
                     continue;
                 }
             }
-            changed.push(self.parse_file(path)?);
+            match self.parse_file(path) {
+                Ok(parsed) => changed.push(parsed),
+                Err(error) if is_not_found(&error) => {
+                    current_rel.remove(&relative);
+                }
+                Err(error) => return Err(error),
+            }
         }
 
         let removed: Vec<String> = stored
@@ -225,10 +247,18 @@ impl CodeIndex {
         };
         let should_index =
             absolute.is_file() && Language::for_path(&absolute).is_some() && !is_symlink(&absolute);
+        let parsed = if should_index {
+            match self.parse_file(&absolute) {
+                Ok(parsed) => Some(parsed),
+                Err(error) if is_not_found(&error) => None,
+                Err(error) => return Err(error),
+            }
+        } else {
+            None
+        };
         let mut connection = self.connection()?;
         let transaction = connection.transaction().context("begin path refresh")?;
-        if should_index {
-            let parsed = self.parse_file(&absolute)?;
+        if let Some(parsed) = parsed {
             write_parsed_file(&transaction, &parsed)?;
         } else {
             transaction.execute("DELETE FROM files WHERE path = ?1", [&relative])?;
@@ -719,6 +749,14 @@ fn modified_ns(metadata: &Metadata) -> i64 {
         .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
         .and_then(|value| i64::try_from(value.as_nanos()).ok())
         .unwrap_or_default()
+}
+
+fn is_not_found(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|io_error| io_error.kind() == std::io::ErrorKind::NotFound)
+    })
 }
 
 fn is_symlink(path: &Path) -> bool {

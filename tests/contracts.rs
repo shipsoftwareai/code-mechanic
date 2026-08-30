@@ -174,7 +174,7 @@ fn body_search_handles_c_crlf_lines_without_leaking_carriage_returns() {
 }
 
 #[test]
-fn static_language_index_locates_go_cpp_objective_c_and_glsl_bodies() {
+fn static_language_index_locates_go_cpp_objective_c_glsl_and_kotlin_bodies() {
     let workspace = TempDir::new().unwrap();
     let fixtures = [
         (
@@ -201,13 +201,19 @@ fn static_language_index_locates_go_cpp_objective_c_and_glsl_bodies() {
             "glslTarget",
             "glsl",
         ),
+        (
+            "src/main/kotlin/Tool.kt",
+            "fun kotlinTarget(value: Int): Int { return value + 1 }\n",
+            "kotlinTarget",
+            "kotlin",
+        ),
     ];
     for (path, source, _, _) in fixtures {
         write(workspace.path(), path, source);
     }
     let index = index_for(workspace.path());
     let summary = index.rebuild().unwrap();
-    assert_eq!(summary.files, 4);
+    assert_eq!(summary.files, 5);
     assert_eq!(summary.parse_failures, 0);
     for (path, _, symbol, language) in fixtures {
         let location = query::locate(&index, symbol, Some(path)).unwrap();
@@ -306,6 +312,16 @@ fn append_parameter_updates_static_definitions_prototypes_and_calls() {
             "glslTarget(float value, bool flag)",
             "glslTarget(1.0, true)",
         ),
+        (
+            "src/main/kotlin/Tool.kt",
+            "fun kotlinTarget(value: Int): Int { return value }\nfun kotlinCall(): Int { return kotlinTarget(1) }\n",
+            "kotlinTarget",
+            "flag: Boolean",
+            "true",
+            2,
+            "kotlinTarget(value: Int, flag: Boolean)",
+            "kotlinTarget(1, true)",
+        ),
     ];
     for (path, source, ..) in cases {
         write(workspace.path(), path, source);
@@ -359,6 +375,52 @@ fn append_parameter_refuses_objective_c_selectors_and_cpp_default_ordering() {
             .to_string()
             .contains("default")
     );
+}
+
+#[test]
+fn kotlin_append_parameter_refuses_unsafe_named_and_trailing_lambda_calls() {
+    let workspace = TempDir::new().unwrap();
+    write(
+        workspace.path(),
+        "src/main/kotlin/Calls.kt",
+        r"
+fun namedTarget(value: Int): Int { return value }
+fun namedCaller(): Int { return namedTarget(value = 1) }
+
+fun trailingTarget(value: Int, transform: (Int) -> Int): Int { return transform(value) }
+fun trailingCaller(): Int { return trailingTarget(1) { it + 1 } }
+",
+    );
+    let index = index_for(workspace.path());
+    index.rebuild().unwrap();
+
+    let named = append_parameter(
+        &index,
+        "namedTarget",
+        "enabled: Boolean",
+        "true",
+        None,
+        false,
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        named
+            .to_string()
+            .contains("require the appended argument to be named")
+    );
+
+    let trailing = append_parameter(
+        &index,
+        "trailingTarget",
+        "enabled: Boolean",
+        "true",
+        None,
+        false,
+        None,
+    )
+    .unwrap_err();
+    assert!(trailing.to_string().contains("parenthesized argument list"));
 }
 
 #[test]
@@ -541,8 +603,9 @@ fn ambiguous_definition_is_rejected_before_a_plan_exists() {
 #[test]
 fn bounded_watcher_refreshes_then_explicitly_unwatches() {
     let workspace = TempDir::new().unwrap();
+    let state = TempDir::new().unwrap();
     write(workspace.path(), "src/lib.rs", "fn before() {}\n");
-    let index = index_for(workspace.path());
+    let index = CodeIndex::open(workspace.path(), &state.path().join("index.sqlite")).unwrap();
     index.rebuild().unwrap();
     let watched_index = index.clone();
     let config = WatchConfig {
@@ -551,11 +614,15 @@ fn bounded_watcher_refreshes_then_explicitly_unwatches() {
         debounce: Duration::from_millis(50),
         reconcile_interval: Duration::from_secs(1),
         allow_unbounded: false,
-        registry_path: Some(workspace.path().join("watchers.sqlite")),
+        registry_path: Some(state.path().join("watchers.sqlite")),
     };
     let handle = std::thread::spawn(move || {
         let stop = Arc::new(AtomicBool::new(false));
-        watcher::run(&watched_index, &config, stop.as_ref())
+        let result = watcher::run(&watched_index, &config, stop.as_ref());
+        if let Err(error) = &result {
+            eprintln!("watcher failed before contract completion: {error:#}");
+        }
+        result
     });
     std::thread::sleep(Duration::from_millis(300));
     write(workspace.path(), "src/lib.rs", "fn after() {}\n");
@@ -570,10 +637,11 @@ fn bounded_watcher_refreshes_then_explicitly_unwatches() {
 #[test]
 fn watcher_registry_lists_metadata_tracks_create_rename_delete_and_stops_all() {
     let workspace = TempDir::new().unwrap();
+    let state = TempDir::new().unwrap();
     write(workspace.path(), "src/stable.rs", "fn stable() {}\n");
-    let index = index_for(workspace.path());
+    let index = CodeIndex::open(workspace.path(), &state.path().join("index.sqlite")).unwrap();
     index.rebuild().unwrap();
-    let registry_path = workspace.path().join("state/watchers.sqlite");
+    let registry_path = state.path().join("watchers.sqlite");
     let registry = WatcherRegistry::open_at(&registry_path).unwrap();
     let watched_index = index.clone();
     let config = WatchConfig {
@@ -589,7 +657,11 @@ fn watcher_registry_lists_metadata_tracks_create_rename_delete_and_stops_all() {
     };
     let handle = std::thread::spawn(move || {
         let stop = Arc::new(AtomicBool::new(false));
-        watcher::run(&watched_index, &config, stop.as_ref())
+        let result = watcher::run(&watched_index, &config, stop.as_ref());
+        if let Err(error) = &result {
+            eprintln!("registry watcher failed before contract completion: {error:#}");
+        }
+        result
     });
 
     wait_until("watcher registration", || {
@@ -633,6 +705,23 @@ fn watcher_registry_lists_metadata_tracks_create_rename_delete_and_stops_all() {
     wait_until("deleted file removed from index", || {
         index
             .definitions("created", None)
+            .is_ok_and(|items| items.is_empty())
+    });
+
+    write(
+        workspace.path(),
+        "src/nested/Watched.kt",
+        "fun kotlinWatched(): Int = 1\n",
+    );
+    wait_until("Kotlin file in created directory indexed", || {
+        index
+            .definitions("kotlinWatched", None)
+            .is_ok_and(|items| items.len() == 1)
+    });
+    std::fs::remove_dir_all(workspace.path().join("src/nested")).unwrap();
+    wait_until("removed directory purged from index", || {
+        index
+            .definitions("kotlinWatched", None)
             .is_ok_and(|items| items.is_empty())
     });
 

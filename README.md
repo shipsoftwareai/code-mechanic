@@ -61,6 +61,7 @@ under the selected root. Add `.code-mechanic/` to the repository's ignore file.
 | Go | `.go` | Functions, receiver methods and calls |
 | Objective-C | `.m` | C functions, method declarations/definitions and messages |
 | GLSL | `.vert`, `.frag`, `.glsl`, `.geom`, `.comp`, `.tesc`, `.tese` | Definitions, prototypes and calls |
+| Kotlin | `.kt`, `.kts` | Top-level, member and extension functions, interface declarations and calls |
 
 Code Mechanic indexes a file only when its Tree-sitter parse is clean. Run
 `diagnostics` to see every refusal rather than receiving incomplete facts that
@@ -193,15 +194,16 @@ registered exactly once with a bounded timeout.
 - [Agent harness integration](docs/AGENT-HARNESS.md)
 - [Refactor safety](docs/REFACTOR-SAFETY.md)
 - [Benchmark methodology](docs/BENCHMARKS.md)
+- [Roadmap](docs/ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 
 ## Project Status
 
 Code Mechanic is young and intentionally conservative. Its index is disposable;
-source files remain authoritative. The next high-value designs are transactional
-file moves with language-specific dependency rewrites and richer signature
-migrations backed by compiler or language-server identity.
+source files remain authoritative. The [roadmap](docs/ROADMAP.md) prioritizes
+automatic freshness, transactional file moves and richer signature migrations
+before adding broad language count.
 
 Licensed under either [MIT](LICENSE-MIT) or [Apache License 2.0](LICENSE-APACHE),
 at your option.

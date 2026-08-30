@@ -235,7 +235,7 @@ struct BenchArgs {
 #[derive(Debug, Serialize)]
 struct Capabilities {
     schema_version: u32,
-    languages: [&'static str; 6],
+    languages: [&'static str; 7],
     persistent_index: &'static str,
     queries: [&'static str; 7],
     refactors: [&'static str; 4],
@@ -442,7 +442,15 @@ fn run_benchmark(index: &CodeIndex, args: &BenchArgs, pretty: bool) -> Result<()
 fn capabilities() -> Capabilities {
     Capabilities {
         schema_version: 1,
-        languages: ["rust", "c/header", "c++", "go", "objective-c", "glsl"],
+        languages: [
+            "rust",
+            "c/header",
+            "c++",
+            "go",
+            "objective-c",
+            "glsl",
+            "kotlin",
+        ],
         persistent_index: "SQLite WAL at ROOT/.code-mechanic/index.sqlite",
         queries: [
             "status",

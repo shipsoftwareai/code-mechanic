@@ -37,7 +37,8 @@ for SPEC in \
     'goComplex:cmd/tool/main.go:go' \
     'cppComplex:native/examples.cpp:cpp' \
     'renderFrame:native/examples.m:objective-c' \
-    'glslComplex:shaders/examples.frag:glsl'
+    'glslComplex:shaders/examples.frag:glsl' \
+    'kotlinComplex:kotlin/examples.kt:kotlin'
 do
     SYMBOL=${SPEC%%:*}
     REST=${SPEC#*:}
@@ -69,6 +70,15 @@ PLAN_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["plan_
     replace-body --symbol glslComplex --code 'return value * 2.0;' \
     --apply --expect-plan "$PLAN_ID" >"$OUT/body-apply.json"
 
+"$BIN" --root "$OUT/workspace" --database "$DB" \
+    append-parameter --symbol kotlinEasy --parameter 'enabled: Boolean' --argument true \
+    >"$OUT/kotlin-append-preview.json"
+PLAN_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["plan_id"])' \
+    "$OUT/kotlin-append-preview.json")
+"$BIN" --root "$OUT/workspace" --database "$DB" \
+    append-parameter --symbol kotlinEasy --parameter 'enabled: Boolean' --argument true \
+    --apply --expect-plan "$PLAN_ID" >"$OUT/kotlin-append-apply.json"
+
 "$BIN" --root "$OUT/workspace" --database "$DB" watch \
     --duration-seconds 3 --until-idle-seconds 1 >"$OUT/watch.json"
 "$BIN" watchers list >"$OUT/watchers.json"
@@ -76,7 +86,9 @@ PLAN_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["plan_
 "$BIN" --root "$OUT/workspace" --database "$DB" bench \
     --case rust_complex:src/examples.rs \
     --case c_complex:native/examples.c \
-    --warm-runs 5 --window-lines 60 --min-token-reduction-pct 50 \
+    --case kotlinEasy:kotlin/examples.kt \
+    --case kotlinComplex:kotlin/examples.kt \
+    --warm-runs 5 --window-lines 120 --min-token-reduction-pct 50 \
     --output "$OUT/benchmark.json" >"$OUT/benchmark-stdout.json"
 
 python3 - "$OUT" <<'PY'
@@ -88,12 +100,13 @@ out = Path(sys.argv[1])
 assert json.loads((out / "diagnostics.json").read_text()) == []
 assert json.loads((out / "append-apply.json").read_text())["applied"]
 assert json.loads((out / "body-apply.json").read_text())["applied"]
+assert json.loads((out / "kotlin-append-apply.json").read_text())["applied"]
 assert json.loads((out / "watch.json").read_text())["unwatched"]
 watchers = json.loads((out / "watchers.json").read_text())
 assert watchers["active"] == 0 and watchers["watchers"] == []
 benchmark = json.loads((out / "benchmark.json").read_text())
 assert benchmark["passed"] and benchmark["aggregate"]["token_reduction_pct"] >= 50
-for language in ["rust", "c", "go", "cpp", "objective-c", "glsl"]:
+for language in ["rust", "c", "go", "cpp", "objective-c", "glsl", "kotlin"]:
     locator = json.loads((out / f"locator-{language}.json").read_text())
     assert locator["language"] == language
 PY

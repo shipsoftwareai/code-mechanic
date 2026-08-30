@@ -70,6 +70,7 @@ scripts/agent-cube/lint.sh
 scripts/agent-cube/refactor-smoke.sh
 scripts/agent-cube/watcher-smoke.sh
 scripts/agent-cube/benchmark-smoke.sh
+scripts/agent-cube/kotlin-smoke.sh
 scripts/agent-cube/agent-contract-smoke.sh
 scripts/agent-cube/verify.sh
 ```

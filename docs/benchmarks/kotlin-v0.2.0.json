@@ -1,0 +1,60 @@
+{
+  "schema_version": 2,
+  "tokenizer": "o200k_base (local tiktoken-rs)",
+  "baseline": "in-process exact-word workspace scan plus one 120-line targeted source range",
+  "indexed": "exact raw indexed function source (the symbol --raw payload)",
+  "locator": "fresh function/signature/body spans without source (compact locate JSON)",
+  "warm_runs": 20,
+  "minimum_token_reduction_pct": 0.0,
+  "passed": true,
+  "aggregate": {
+    "cases_passed": 2,
+    "cases_total": 2,
+    "baseline_bytes": 7511,
+    "indexed_bytes": 1191,
+    "locator_bytes": 529,
+    "baseline_tokens": 2156,
+    "indexed_tokens": 269,
+    "locator_tokens": 172,
+    "token_reduction_pct": 87.52319109461966,
+    "locator_vs_full_source_reduction_pct": 36.05947955390335
+  },
+  "cases": [
+    {
+      "symbol": "kotlinEasy",
+      "file": "kotlin/examples.kt",
+      "answer_equivalent": true,
+      "locator_exact": true,
+      "baseline_bytes": 3768,
+      "indexed_bytes": 43,
+      "locator_bytes": 263,
+      "baseline_tokens": 1080,
+      "indexed_tokens": 13,
+      "locator_tokens": 86,
+      "token_reduction_pct": 98.79629629629629,
+      "locator_vs_full_source_reduction_pct": -561.5384615384615,
+      "baseline_scan_p50_us": 1137,
+      "indexed_query_p50_us": 961,
+      "locator_query_p50_us": 1006,
+      "passed": true
+    },
+    {
+      "symbol": "kotlinComplex",
+      "file": "kotlin/examples.kt",
+      "answer_equivalent": true,
+      "locator_exact": true,
+      "baseline_bytes": 3743,
+      "indexed_bytes": 1148,
+      "locator_bytes": 266,
+      "baseline_tokens": 1076,
+      "indexed_tokens": 256,
+      "locator_tokens": 86,
+      "token_reduction_pct": 76.2081784386617,
+      "locator_vs_full_source_reduction_pct": 66.40625,
+      "baseline_scan_p50_us": 1212,
+      "indexed_query_p50_us": 1018,
+      "locator_query_p50_us": 1043,
+      "passed": true
+    }
+  ]
+}

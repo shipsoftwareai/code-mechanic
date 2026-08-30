@@ -390,7 +390,7 @@ fn push_argument_replacement(
             record.line
         )
     })?;
-    let replacement = append_to_list(&source, start, end, argument, "argument", None)?;
+    let replacement = append_to_list(&source, start, end, argument, "argument", Some(language))?;
     grouped
         .entry(record.path.clone())
         .or_default()
@@ -465,11 +465,11 @@ fn append_to_list(
     if trimmed.trim_end_matches(',').trim_end().ends_with("...") {
         bail!("cannot append after a variadic {kind}; it must remain last");
     }
-    if parameter_language == Some(Language::Cpp) && trimmed.contains('=') && !value.contains('=') {
-        bail!("C++ parameters after a defaulted parameter must also have a default");
-    }
-    if parameter_language
-        .is_some_and(|language| matches!(language, Language::C | Language::Cpp | Language::Glsl))
+    validate_append_position(kind, parameter_language, trimmed, value)?;
+    if kind == "parameter"
+        && parameter_language.is_some_and(|language| {
+            matches!(language, Language::C | Language::Cpp | Language::Glsl)
+        })
         && trimmed == "void"
     {
         let offset = interior
@@ -540,6 +540,29 @@ fn append_to_list(
         kind: kind.to_owned(),
         line: source[..replace_start].matches('\n').count() + 1,
     })
+}
+
+fn validate_append_position(
+    kind: &str,
+    language: Option<Language>,
+    existing: &str,
+    value: &str,
+) -> Result<()> {
+    if kind == "parameter"
+        && language == Some(Language::Cpp)
+        && existing.contains('=')
+        && !value.contains('=')
+    {
+        bail!("C++ parameters after a defaulted parameter must also have a default");
+    }
+    if kind == "argument"
+        && language == Some(Language::Kotlin)
+        && existing.contains('=')
+        && !value.contains('=')
+    {
+        bail!("Kotlin calls with named arguments require the appended argument to be named");
+    }
+    Ok(())
 }
 
 fn build_plan(
@@ -769,6 +792,7 @@ fn record_language(value: &str) -> Result<Language> {
         "go" => Ok(Language::Go),
         "objective-c" => Ok(Language::ObjectiveC),
         "glsl" => Ok(Language::Glsl),
+        "kotlin" => Ok(Language::Kotlin),
         _ => bail!("unsupported indexed language `{value}`"),
     }
 }

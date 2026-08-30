@@ -21,7 +21,7 @@ network request or estimated bytes-per-token ratio is involved.
 ## Run It On Your Workload
 
 ```sh
-code-mechanic --root . index --reconcile
+code-mechanic --root . index --reconcile --force-hash
 code-mechanic --root . bench \
   --case small_function:src/small.rs \
   --case large_function:native/runtime.cpp \
@@ -30,6 +30,25 @@ code-mechanic --root . bench \
   --min-token-reduction-pct 0 \
   --output target/code-mechanic-benchmark.json
 ```
+
+## Kotlin Parity Result
+
+The retained Kotlin fixture contains expression-body, extension, generic,
+suspend, higher-order, collection-pipeline, retry/error and trailing-lambda
+shapes surrounded by enough realistic source to make retrieval differences
+visible. The 20-run, 120-line result retained in
+[`benchmarks/kotlin-v0.2.0.json`](benchmarks/kotlin-v0.2.0.json) is:
+
+| Case | Baseline tokens | Exact function | Locator | Exact reduction | Locator vs body |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `kotlinEasy` | 1,080 | 13 | 86 | 98.80% | -561.54% |
+| `kotlinComplex` | 1,076 | 256 | 86 | 76.21% | 66.41% |
+| Aggregate | 2,156 | 269 | 172 | 87.52% | 36.06% |
+
+Both cases prove exact-answer and locator-range equivalence. The tiny function
+also demonstrates the honest crossover: returning its 13-token body is cheaper
+than an 86-token locator. The complex function is where locator-first retrieval
+earns its place.
 
 Use `--min-token-reduction-pct` as a gate only after collecting representative
 cases. The threshold applies to exact-source retrieval versus the baseline;

@@ -6,7 +6,9 @@ use std::path::Path;
 use code_mechanic::benchmark::{self, BenchmarkCase};
 use code_mechanic::index::CodeIndex;
 use code_mechanic::language::{Language, SymbolKind, parse};
-use code_mechanic::refactor::{inject_function_entry, rename_function};
+use code_mechanic::refactor::{
+    append_parameter, inject_function_entry, rename_function, replace_function_body,
+};
 use tempfile::TempDir;
 
 fn write(root: &Path, relative: &str, source: &str) {
@@ -65,7 +67,11 @@ fn caller(pointer: *const u8) { let _ = unsafe { target(pointer) }; }
 
     for (label, source, expected_defs, expected_calls) in cases {
         let parsed = parse(Language::Rust, source).unwrap();
-        assert!(!parsed.tree.root_node().has_error(), "{label}");
+        assert!(
+            !parsed.tree.root_node().has_error(),
+            "{label}: {}",
+            parsed.tree.root_node().to_sexp()
+        );
         let defs: Vec<_> = parsed
             .functions
             .iter()
@@ -124,7 +130,11 @@ int caller(struct Api api) { return api.target(3); }
 
     for (label, source, expected_defs, expected_calls) in cases {
         let parsed = parse(Language::C, source).unwrap();
-        assert!(!parsed.tree.root_node().has_error(), "{label}");
+        assert!(
+            !parsed.tree.root_node().has_error(),
+            "{label}: {}",
+            parsed.tree.root_node().to_sexp()
+        );
         let defs: Vec<_> = parsed
             .functions
             .iter()
@@ -134,6 +144,266 @@ int caller(struct Api api) { return api.target(3); }
         assert_eq!(defs, expected_defs, "{label}");
         assert_eq!(calls, expected_calls, "{label}");
     }
+}
+
+#[test]
+fn kotlin_parser_examples_cover_scripts_extensions_generics_interfaces_and_false_positives() {
+    let cases = [
+        (
+            "top-level expression body",
+            "fun target(value: Int): Int = value + 1\nfun caller() = target(1)\n",
+            vec![
+                ("target", SymbolKind::Definition),
+                ("caller", SymbolKind::Definition),
+            ],
+            vec!["target"],
+        ),
+        (
+            "extension and safe-navigation calls",
+            r#"
+fun String.target(prefix: String): String { return prefix + this }
+fun caller(value: String?) { value?.target("safe") }
+"#,
+            vec![
+                ("target", SymbolKind::Definition),
+                ("caller", SymbolKind::Definition),
+            ],
+            vec!["target"],
+        ),
+        (
+            "suspend generic member and trailing lambda",
+            r"
+class Worker {
+    suspend fun <T : Any> target(value: T, transform: (T) -> T): T {
+        return transform(value)
+    }
+}
+fun caller(worker: Worker) { worker.target(1) { it } }
+",
+            vec![
+                ("target", SymbolKind::Definition),
+                ("caller", SymbolKind::Definition),
+            ],
+            vec!["transform", "target"],
+        ),
+        (
+            "interface declaration and override",
+            r"
+interface Api {
+    fun target(value: Int): Int
+}
+class RealApi : Api {
+    override fun target(value: Int): Int { return value + 1 }
+}
+",
+            vec![
+                ("target", SymbolKind::Prototype),
+                ("target", SymbolKind::Definition),
+            ],
+            Vec::<&str>::new(),
+        ),
+        (
+            "comments and strings are not calls",
+            r#"
+fun target() {}
+fun caller() {
+    // target() is documentation only.
+    val text = "target() is text"
+    target()
+}
+"#,
+            vec![
+                ("target", SymbolKind::Definition),
+                ("caller", SymbolKind::Definition),
+            ],
+            vec!["target"],
+        ),
+    ];
+
+    for (label, source, expected_defs, expected_calls) in cases {
+        let parsed = parse(Language::Kotlin, source).unwrap();
+        assert!(
+            !parsed.tree.root_node().has_error(),
+            "{label}: {}",
+            parsed.tree.root_node().to_sexp()
+        );
+        let defs: Vec<_> = parsed
+            .functions
+            .iter()
+            .map(|item| (item.name.as_str(), item.kind))
+            .collect();
+        let calls: Vec<_> = parsed.calls.iter().map(|item| item.name.as_str()).collect();
+        assert_eq!(defs, expected_defs, "{label}");
+        assert_eq!(calls, expected_calls, "{label}");
+    }
+
+    assert_eq!(
+        Language::for_path(Path::new("build.gradle.kts")),
+        Some(Language::Kotlin)
+    );
+    assert_eq!(
+        Language::for_path(Path::new("Worker.kt")),
+        Some(Language::Kotlin)
+    );
+}
+
+const KOTLIN_REFACTOR_PATH: &str = "src/main/kotlin/sample/MechanicExamples.kt";
+
+fn kotlin_refactor_workspace() -> (TempDir, CodeIndex) {
+    let workspace = TempDir::new().unwrap();
+    write(
+        workspace.path(),
+        KOTLIN_REFACTOR_PATH,
+        r"
+package sample
+
+fun renameTarget(value: Int): Int { return value + 1 }
+fun renameCaller(): Int { return renameTarget(1) }
+
+fun injectTarget(value: Int): Int { return value }
+fun replaceTarget(value: Int): Int { return value + 1 }
+
+fun appendTarget(value: Int): Int { return value }
+fun appendCaller(): Int { return appendTarget(4) }
+
+fun trailingTarget(value: Int, transform: (Int) -> Int): Int { return transform(value) }
+fun trailingCaller(): Int { return trailingTarget(4) { it + 1 } }
+
+fun expressionTarget(value: Int): Int = value + 1
+",
+    );
+    let index = index_for(workspace.path());
+    index.rebuild().unwrap();
+    (workspace, index)
+}
+
+#[test]
+fn kotlin_rename_and_parameter_append_have_preview_apply_parity() {
+    let (workspace, index) = kotlin_refactor_workspace();
+    let rename =
+        rename_function(&index, "renameTarget", "renamedTarget", None, false, None).unwrap();
+    rename_function(
+        &index,
+        "renameTarget",
+        "renamedTarget",
+        None,
+        true,
+        Some(&rename.plan_id),
+    )
+    .unwrap();
+
+    let parameter = append_parameter(
+        &index,
+        "appendTarget",
+        "enabled: Boolean",
+        "true",
+        None,
+        false,
+        None,
+    )
+    .unwrap();
+    append_parameter(
+        &index,
+        "appendTarget",
+        "enabled: Boolean",
+        "true",
+        None,
+        true,
+        Some(&parameter.plan_id),
+    )
+    .unwrap();
+
+    let source = std::fs::read_to_string(workspace.path().join(KOTLIN_REFACTOR_PATH)).unwrap();
+    assert!(source.contains("fun renamedTarget(value: Int)"), "{source}");
+    assert!(source.contains("return renamedTarget(1)"), "{source}");
+    assert!(
+        source.contains("appendTarget(value: Int, enabled: Boolean)"),
+        "{source}"
+    );
+    assert!(source.contains("appendTarget(4, true)"), "{source}");
+    assert!(
+        !parse(Language::Kotlin, &source)
+            .unwrap()
+            .tree
+            .root_node()
+            .has_error()
+    );
+}
+
+#[test]
+fn kotlin_body_refactors_and_unsafe_shapes_have_explicit_boundaries() {
+    let (workspace, index) = kotlin_refactor_workspace();
+    let injection = inject_function_entry(
+        &index,
+        "injectTarget",
+        "require(value >= 0)",
+        None,
+        false,
+        None,
+    )
+    .unwrap();
+    inject_function_entry(
+        &index,
+        "injectTarget",
+        "require(value >= 0)",
+        None,
+        true,
+        Some(&injection.plan_id),
+    )
+    .unwrap();
+
+    let body = replace_function_body(
+        &index,
+        "replaceTarget",
+        "val doubled = value * 2\nreturn doubled",
+        None,
+        false,
+        None,
+    )
+    .unwrap();
+    replace_function_body(
+        &index,
+        "replaceTarget",
+        "val doubled = value * 2\nreturn doubled",
+        None,
+        true,
+        Some(&body.plan_id),
+    )
+    .unwrap();
+
+    let source = std::fs::read_to_string(workspace.path().join(KOTLIN_REFACTOR_PATH)).unwrap();
+    assert!(source.contains("require(value >= 0)"), "{source}");
+    assert!(source.contains("val doubled = value * 2"), "{source}");
+    assert!(
+        !parse(Language::Kotlin, &source)
+            .unwrap()
+            .tree
+            .root_node()
+            .has_error()
+    );
+
+    let trailing = append_parameter(
+        &index,
+        "trailingTarget",
+        "enabled: Boolean",
+        "true",
+        None,
+        false,
+        None,
+    )
+    .unwrap_err();
+    assert!(trailing.to_string().contains("parenthesized argument list"));
+
+    let expression = replace_function_body(
+        &index,
+        "expressionTarget",
+        "return value * 2",
+        None,
+        false,
+        None,
+    )
+    .unwrap_err();
+    assert!(expression.to_string().contains("braced function body"));
 }
 
 #[test]
@@ -249,9 +519,20 @@ int use_c_complex(void) { return c_complex(4); }
 ",
         "c_pad",
     );
+    let kotlin_complex = padded_kotlin_source(
+        r"
+fun kotlin_complex(value: Int): Int {
+    val doubled = value * 2
+    return doubled + 1
+}
+fun use_kotlin_complex(): Int = kotlin_complex(7)
+",
+        "kotlinPad",
+    );
     write(workspace.path(), "src/easy.rs", &rust_easy);
     write(workspace.path(), "src/complex.rs", &rust_complex);
     write(workspace.path(), "native/complex.c", &c_complex);
+    write(workspace.path(), "kotlin/Complex.kt", &kotlin_complex);
     let index = index_for(workspace.path());
     index.rebuild().unwrap();
     let report = benchmark::run(
@@ -269,6 +550,10 @@ int use_c_complex(void) { return c_complex(4); }
                 symbol: "c_complex".to_owned(),
                 file: Some("native/complex.c".to_owned()),
             },
+            BenchmarkCase {
+                symbol: "kotlin_complex".to_owned(),
+                file: Some("kotlin/Complex.kt".to_owned()),
+            },
         ],
         3,
         100,
@@ -276,8 +561,8 @@ int use_c_complex(void) { return c_complex(4); }
     )
     .unwrap();
     assert!(report.passed, "{report:#?}");
-    assert_eq!(report.aggregate.cases_passed, 3);
-    assert_eq!(report.aggregate.cases_total, 3);
+    assert_eq!(report.aggregate.cases_passed, 4);
+    assert_eq!(report.aggregate.cases_total, 4);
     assert!(report.aggregate.baseline_tokens > report.aggregate.indexed_tokens);
     assert!(report.aggregate.token_reduction_pct >= 50.0);
     assert!(report.cases.iter().all(|case| case.answer_equivalent));
@@ -315,6 +600,18 @@ fn padded_c_source(core: &str, prefix: &str) -> String {
             "int {prefix}_after_{index}(void) {{ return {index}; }}"
         )
         .unwrap();
+    }
+    source
+}
+
+fn padded_kotlin_source(core: &str, prefix: &str) -> String {
+    let mut source = String::from("package benchmark\n\n");
+    for index in 0..70 {
+        writeln!(source, "fun {prefix}Before{index}(): Int = {index}").unwrap();
+    }
+    source.push_str(core);
+    for index in 0..70 {
+        writeln!(source, "fun {prefix}After{index}(): Int = {index}").unwrap();
     }
     source
 }
