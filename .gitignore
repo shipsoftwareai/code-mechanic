@@ -1,0 +1,5 @@
+/target/
+/.code-mechanic/
+*.sqlite-shm
+*.sqlite-wal
+.DS_Store

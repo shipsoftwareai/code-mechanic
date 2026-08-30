@@ -1,0 +1,26 @@
+name: Feature proposal
+description: Propose a structural query, language adapter or guarded refactor
+title: "proposal: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Agent workflow
+      description: What broad search, repeated source read or unsafe text edit should disappear?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: AST evidence and refusal boundary
+      description: Which grammar nodes prove the edit, and when must it refuse?
+    validations:
+      required: true
+  - type: textarea
+    id: value
+    attributes:
+      label: Expected value
+      description: Include representative files/call sites and a measurable token or safety benefit.
+    validations:
+      required: true

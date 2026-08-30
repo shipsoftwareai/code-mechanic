@@ -1,0 +1,42 @@
+name: Bug report
+description: Report incorrect structure, an unsafe edit, crash or lifecycle problem
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include proprietary source or credentials. Reduce code to a public fixture.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: code-mechanic 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language
+      options: [Rust, C, C++, Go, Objective-C, GLSL, Watcher/lifecycle, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include the command, compact public fixture and complete structured error/output.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: macOS 15 arm64, Ubuntu 24.04 x86_64, Windows 2025 x86_64
+    validations:
+      required: true

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Code Mechanic</title>
+  <desc id="desc">A cyan code bracket surrounding an amber mechanical gear</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101827"/>
+      <stop offset="1" stop-color="#17243a"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#67e8f9"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)" stroke="#334155" stroke-width="4"/>
+  <path d="M40 35 20 64l20 29M88 35l20 29-20 29" fill="none" stroke="url(#cyan)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="#f59e0b">
+    <path d="m64 34 7 3 7-2 7 7-2 7 3 7 8 3v10l-8 3-3 7 2 7-7 7-7-2-7 3-3 8H51l-3-8-7-3-7 2-7-7 2-7-3-7-8-3V59l8-3 3-7-2-7 7-7 7 2 7-3 3-8h10z" opacity=".98"/>
+    <circle cx="56" cy="64" r="13" fill="#17243a"/>
+    <circle cx="56" cy="64" r="6" fill="#fbbf24"/>
+  </g>
+</svg>
