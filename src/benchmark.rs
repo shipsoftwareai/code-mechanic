@@ -212,7 +212,9 @@ fn baseline_output_for(
 
     let target_source = std::fs::read_to_string(index.root().join(&target.path))
         .with_context(|| format!("read benchmark target {}", target.path))?;
-    let lines: Vec<&str> = target_source.lines().collect();
+    // Keep original line terminators so the range contains the byte-exact
+    // indexed answer on CRLF checkouts as well as LF checkouts.
+    let lines: Vec<&str> = target_source.split_inclusive('\n').collect();
     let function_lines = target.end_line.saturating_sub(target.start_line) + 1;
     let effective_window = window_lines.max(function_lines + 10);
     let leading = effective_window.saturating_sub(function_lines) / 2;
@@ -221,7 +223,9 @@ fn baseline_output_for(
     writeln!(output, "{}:{}-{}", target.path, start + 1, end)?;
     for line in &lines[start..end] {
         output.push_str(line);
-        output.push('\n');
+        if !line.ends_with('\n') {
+            output.push('\n');
+        }
     }
     Ok(output)
 }

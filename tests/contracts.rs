@@ -848,6 +848,40 @@ fn benchmark_refuses_to_claim_large_savings_when_the_exact_body_dominates() {
     assert!(report.cases[0].locator_vs_full_source_reduction_pct >= 80.0);
 }
 
+#[test]
+fn benchmark_equivalence_preserves_crlf_source_windows() {
+    let workspace = TempDir::new().unwrap();
+    let mut source = String::new();
+    for index in 0..40 {
+        writeln!(source, "int before_{index}(void) {{ return {index}; }}").unwrap();
+    }
+    source.push_str(
+        "int crlf_target(int value) {\n    int doubled = value * 2;\n    return doubled + 1;\n}\n",
+    );
+    for index in 0..40 {
+        writeln!(source, "int after_{index}(void) {{ return {index}; }}").unwrap();
+    }
+    let source = source.replace('\n', "\r\n");
+    write(workspace.path(), "native/crlf.c", &source);
+    let index = index_for(workspace.path());
+    index.rebuild().unwrap();
+
+    let report = benchmark::run(
+        &index,
+        &[BenchmarkCase {
+            symbol: "crlf_target".to_owned(),
+            file: Some("native/crlf.c".to_owned()),
+        }],
+        2,
+        80,
+        0.0,
+    )
+    .unwrap();
+    assert!(report.passed, "{report:#?}");
+    assert!(report.cases[0].answer_equivalent);
+    assert!(report.cases[0].locator_exact);
+}
+
 fn wait_until(label: &str, mut condition: impl FnMut() -> bool) {
     let started = std::time::Instant::now();
     while !condition() {
