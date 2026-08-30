@@ -8,7 +8,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use notify::event::ModifyKind;
-use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{
+    Error as NotifyError, ErrorKind, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
+};
 use serde::Serialize;
 
 use crate::index::{CodeIndex, IndexSummary};
@@ -90,7 +92,7 @@ pub fn run(index: &CodeIndex, config: &WatchConfig, stop: &AtomicBool) -> Result
     let registry = match registry {
         Ok(registry) => registry,
         Err(error) => {
-            watcher.unwatch(index.root()).with_context(|| {
+            unwatch_explicitly(&mut watcher, index.root()).with_context(|| {
                 format!("unwatch {} after registry failure", index.root().display())
             })?;
             return Err(error).context("open watcher lifecycle registry");
@@ -104,7 +106,7 @@ pub fn run(index: &CodeIndex, config: &WatchConfig, stop: &AtomicBool) -> Result
     }) {
         Ok(registration) => registration,
         Err(error) => {
-            watcher.unwatch(index.root()).with_context(|| {
+            unwatch_explicitly(&mut watcher, index.root()).with_context(|| {
                 format!(
                     "unwatch {} after registration failure",
                     index.root().display()
@@ -255,8 +257,7 @@ fn watch_loop(
 impl ActiveWatch {
     fn close(&mut self) -> Result<()> {
         let unwatch_result = if let Some(mut watcher) = self.watcher.take() {
-            watcher
-                .unwatch(&self.root)
+            unwatch_explicitly(&mut watcher, &self.root)
                 .with_context(|| format!("unwatch {}", self.root.display()))
         } else {
             Ok(())
@@ -272,10 +273,32 @@ impl Drop for ActiveWatch {
     fn drop(&mut self) {
         if !self.closed {
             if let Some(mut watcher) = self.watcher.take() {
-                let _ = watcher.unwatch(&self.root);
+                let _ = unwatch_explicitly(&mut watcher, &self.root);
             }
             let _ = self.registration.finish();
         }
+    }
+}
+
+fn unwatch_explicitly(watcher: &mut RecommendedWatcher, root: &Path) -> Result<()> {
+    match watcher.unwatch(root) {
+        Ok(()) => Ok(()),
+        Err(error) if unwatch_target_is_already_gone(&error, root) => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn unwatch_target_is_already_gone(error: &NotifyError, root: &Path) -> bool {
+    match &error.kind {
+        ErrorKind::PathNotFound | ErrorKind::WatchNotFound => true,
+        ErrorKind::Io(io_error) if io_error.kind() == std::io::ErrorKind::InvalidInput => {
+            !error.paths.is_empty()
+                && error
+                    .paths
+                    .iter()
+                    .all(|path| path.starts_with(root) && !path.exists())
+        }
+        _ => false,
     }
 }
 
@@ -349,4 +372,44 @@ fn relevant_path(path: &Path) -> bool {
         )
     });
     !ignored_component && Language::for_path(path).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unwatch_only_tolerates_invalid_input_for_missing_paths_below_root() {
+        let root = tempfile::TempDir::new().unwrap();
+        let missing_child = root.path().join("removed-child");
+        let already_removed = NotifyError::new(ErrorKind::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "watch was already removed",
+        )))
+        .add_path(missing_child);
+        assert!(unwatch_target_is_already_gone(
+            &already_removed,
+            root.path()
+        ));
+
+        let existing_child = root.path().join("existing-child");
+        std::fs::create_dir(&existing_child).unwrap();
+        let existing_error = NotifyError::new(ErrorKind::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "unexpected invalid watch",
+        )))
+        .add_path(existing_child);
+        assert!(!unwatch_target_is_already_gone(
+            &existing_error,
+            root.path()
+        ));
+
+        let outside = tempfile::TempDir::new().unwrap();
+        let outside_error = NotifyError::new(ErrorKind::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "foreign invalid watch",
+        )))
+        .add_path(outside.path().join("missing"));
+        assert!(!unwatch_target_is_already_gone(&outside_error, root.path()));
+    }
 }
