@@ -23,13 +23,41 @@
 /* Context 23 */
 /* Context 24 */
 
+int c_easy(int value) {
+    return value + 1;
+}
+
+int use_c_easy(void) {
+    return c_easy(3);
+}
+
 int c_complex(int value);
 
 int
 c_complex(
     int value
 ) {
-    return value + 1;
+    int samples[] = {value, value + 3, value - 2, value * 2, value + 7, value / 2};
+    int total = 0;
+    int accepted = 0;
+
+    for (int index = 0; index < 6; ++index) {
+        int candidate = samples[index];
+        if (candidate < 0) {
+            candidate = -candidate;
+        }
+        if ((candidate + index) % 3 == 0) {
+            continue;
+        }
+
+        total += candidate * (index + 1);
+        accepted += 1;
+    }
+
+    if (accepted == 0) {
+        return value;
+    }
+    return total / accepted;
 }
 
 int use_c_complex(void) {

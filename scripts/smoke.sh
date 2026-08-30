@@ -52,6 +52,24 @@ done
     search-body rust_complex --file src/examples.rs --pattern consume --max-results 5 \
     >"$OUT/body-search.json"
 
+"$BIN" --root "$OUT/workspace" --database "$DB" bench \
+    --case simple_probe:src/examples.rs \
+    --case rust_complex:src/examples.rs \
+    --case c_easy:native/examples.c \
+    --case c_complex:native/examples.c \
+    --case goEasy:cmd/tool/main.go \
+    --case goComplex:cmd/tool/main.go \
+    --case cppEasy:native/examples.cpp \
+    --case cppComplex:native/examples.cpp \
+    --case frameCount:native/examples.m \
+    --case renderFrame:native/examples.m \
+    --case glslEasy:shaders/examples.frag \
+    --case glslComplex:shaders/examples.frag \
+    --case kotlinEasy:kotlin/examples.kt \
+    --case kotlinComplex:kotlin/examples.kt \
+    --warm-runs 5 --window-lines 120 --min-token-reduction-pct 30 \
+    --output "$OUT/benchmark.json" >"$OUT/benchmark-stdout.json"
+
 "$BIN" --root "$OUT/workspace" --database "$DB" \
     append-parameter --symbol goComplex --parameter 'enabled bool' --argument true \
     >"$OUT/append-preview.json"
@@ -83,14 +101,6 @@ PLAN_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["plan_
     --duration-seconds 3 --until-idle-seconds 1 >"$OUT/watch.json"
 "$BIN" watchers list >"$OUT/watchers.json"
 
-"$BIN" --root "$OUT/workspace" --database "$DB" bench \
-    --case rust_complex:src/examples.rs \
-    --case c_complex:native/examples.c \
-    --case kotlinEasy:kotlin/examples.kt \
-    --case kotlinComplex:kotlin/examples.kt \
-    --warm-runs 5 --window-lines 120 --min-token-reduction-pct 50 \
-    --output "$OUT/benchmark.json" >"$OUT/benchmark-stdout.json"
-
 python3 - "$OUT" <<'PY'
 import json
 from pathlib import Path
@@ -105,7 +115,18 @@ assert json.loads((out / "watch.json").read_text())["unwatched"]
 watchers = json.loads((out / "watchers.json").read_text())
 assert watchers["active"] == 0 and watchers["watchers"] == []
 benchmark = json.loads((out / "benchmark.json").read_text())
-assert benchmark["passed"] and benchmark["aggregate"]["token_reduction_pct"] >= 50
+assert benchmark["passed"]
+assert benchmark["aggregate"]["cases_passed"] == 14
+assert benchmark["aggregate"]["cases_total"] == 14
+assert benchmark["aggregate"]["token_reduction_pct"] >= 60
+complex_symbols = {
+    "rust_complex", "c_complex", "goComplex", "cppComplex",
+    "renderFrame", "glslComplex", "kotlinComplex",
+}
+for case in benchmark["cases"]:
+    assert case["answer_equivalent"] and case["locator_exact"]
+    if case["symbol"] in complex_symbols:
+        assert case["locator_tokens"] < case["indexed_tokens"]
 for language in ["rust", "c", "go", "cpp", "objective-c", "glsl", "kotlin"]:
     locator = json.loads((out / f"locator-{language}.json").read_text())
     assert locator["language"] == language

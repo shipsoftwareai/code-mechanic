@@ -166,11 +166,19 @@ code-mechanic bench \
   --output target/code-mechanic-benchmark.json
 ```
 
-In the original 2,009-file adoption codebase, representative Go, C++,
-Objective-C and GLSL functions totalled 6,092 body tokens while their locators
-totalled 369—a 93.94% reduction relative to retrieving every body. A tiny
-function can cost more as a locator than as source; the benchmark reports that
-honestly. See [Benchmark methodology](docs/BENCHMARKS.md).
+The retained v0.2.0 suite covers easy and complex functions in all seven
+language families. Across its 14 equivalent-answer cases, the broad baseline is
+6,789 tokens and exact function retrieval is 1,375 tokens—a **79.75%
+reduction**. For the seven complex cases, locators are 557 tokens versus 1,269
+tokens of full function source—a further **56.11% reduction** when the agent
+only needs the declaration/body position. Tiny functions can still cost more as
+locator metadata than as source; the suite records that crossover rather than
+hiding it. See the [full per-language results](docs/BENCHMARKS.md) and retained
+[JSON evidence](docs/benchmarks/all-languages-v0.2.0.json).
+
+The original 2,009-file adoption codebase separately measured a 93.94% locator
+reduction across a representative Go/C++/Objective-C/GLSL set. Workload shape
+matters, so neither result is presented as a universal billing claim.
 
 ## Agent Harnesses
 

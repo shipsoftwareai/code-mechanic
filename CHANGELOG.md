@@ -11,8 +11,8 @@ All notable changes to Code Mechanic are documented here. The project follows
 
 - Kotlin `.kt`/`.kts` indexing, locator/body queries, call references and safe
   parity for rename, braced-body injection/replacement and parameter append.
-- Kotlin easy-to-complex fixtures, refactor/refusal contracts, smoke coverage
-  and token benchmark evidence.
+- Easy-to-complex fixtures for all seven language families, including Kotlin
+  refactor/refusal contracts and retained per-language token evidence.
 - A value-ordered roadmap for freshness, file moves, signature migrations and
   future language support.
 

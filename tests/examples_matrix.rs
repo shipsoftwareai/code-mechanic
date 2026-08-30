@@ -568,6 +568,67 @@ fun use_kotlin_complex(): Int = kotlin_complex(7)
     assert!(report.cases.iter().all(|case| case.answer_equivalent));
 }
 
+#[test]
+fn retained_fixture_benchmark_covers_easy_and_complex_cases_in_every_language() {
+    let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/benchmark");
+    let state = TempDir::new().unwrap();
+    let index = CodeIndex::open(&fixture_root, &state.path().join("index.sqlite")).unwrap();
+    let summary = index.rebuild().unwrap();
+    assert_eq!(summary.parse_failures, 0);
+
+    let cases = [
+        ("simple_probe", "src/examples.rs"),
+        ("rust_complex", "src/examples.rs"),
+        ("c_easy", "native/examples.c"),
+        ("c_complex", "native/examples.c"),
+        ("goEasy", "cmd/tool/main.go"),
+        ("goComplex", "cmd/tool/main.go"),
+        ("cppEasy", "native/examples.cpp"),
+        ("cppComplex", "native/examples.cpp"),
+        ("frameCount", "native/examples.m"),
+        ("renderFrame", "native/examples.m"),
+        ("glslEasy", "shaders/examples.frag"),
+        ("glslComplex", "shaders/examples.frag"),
+        ("kotlinEasy", "kotlin/examples.kt"),
+        ("kotlinComplex", "kotlin/examples.kt"),
+    ]
+    .into_iter()
+    .map(|(symbol, file)| BenchmarkCase {
+        symbol: symbol.to_owned(),
+        file: Some(file.to_owned()),
+    })
+    .collect::<Vec<_>>();
+
+    let report = benchmark::run(&index, &cases, 3, 120, 0.0).unwrap();
+    assert!(report.passed, "{report:#?}");
+    assert_eq!(report.aggregate.cases_passed, 14);
+    assert_eq!(report.aggregate.cases_total, 14);
+    assert!(report.aggregate.token_reduction_pct >= 60.0, "{report:#?}");
+    assert!(report.cases.iter().all(|case| {
+        case.answer_equivalent && case.locator_exact && case.baseline_tokens > case.indexed_tokens
+    }));
+
+    for symbol in [
+        "rust_complex",
+        "c_complex",
+        "goComplex",
+        "cppComplex",
+        "renderFrame",
+        "glslComplex",
+        "kotlinComplex",
+    ] {
+        let case = report
+            .cases
+            .iter()
+            .find(|case| case.symbol == symbol)
+            .unwrap();
+        assert!(
+            case.locator_tokens < case.indexed_tokens,
+            "complex case should make locator retrieval worthwhile: {case:#?}"
+        );
+    }
+}
+
 fn padded_source(core: &str, prefix: &str) -> String {
     let mut source = String::new();
     for index in 0..70 {

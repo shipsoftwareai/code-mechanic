@@ -44,11 +44,31 @@ struct Worker;
 
 impl Worker {
     #[inline]
-    async fn rust_complex<'a, T>(&self, value: &'a T) -> usize
+    async fn rust_complex<'a, T>(&self, values: &'a [T], limit: usize) -> usize
     where
         T: Send + Sync,
     {
-        consume(value).await
+        let capped = limit.min(values.len());
+        let mut accepted = 0usize;
+        let mut weighted_total = 0usize;
+
+        for (index, value) in values.iter().take(capped).enumerate() {
+            let measured = consume(value).await;
+            if measured == 0 {
+                continue;
+            }
+
+            let weighted = measured.saturating_mul(index + 1);
+            weighted_total = weighted_total.saturating_add(weighted);
+            if weighted % 2 == 0 || index == 0 {
+                accepted += 1;
+            }
+        }
+
+        match accepted {
+            0 => 0,
+            count => weighted_total / count,
+        }
     }
 }
 
@@ -57,7 +77,7 @@ async fn consume<T>(_value: &T) -> usize {
 }
 
 async fn use_rust_complex(worker: &Worker) -> usize {
-    worker.rust_complex(&9_u32).await
+    worker.rust_complex(&[9_u32, 11, 13, 15], 3).await
 }
 
 // trailing context 01
